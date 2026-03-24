@@ -136,3 +136,7 @@ Load it with:
 ```sh
 launchctl load ~/Library/LaunchAgents/com.newsdigest.fetch.plist
 ```
+
+---
+
+Built with [Claude Code](https://claude.ai/code).
