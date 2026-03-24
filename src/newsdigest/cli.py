@@ -307,7 +307,7 @@ def _deliver(
         try:
             email = EmailOutput(config.output.email.recipient)
             if ranked is not None:
-                email.render_ranked(ranked)
+                email.render_ranked(ranked, model=config.ranking.model)
             else:
                 email.render(articles)
         except Exception as e:

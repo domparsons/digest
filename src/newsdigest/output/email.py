@@ -66,8 +66,8 @@ class EmailOutput:
     def render(self, articles: list[Article]) -> None:
         self._send(self._build_html(articles), len(articles))
 
-    def render_ranked(self, ranked: list[RankedArticle]) -> None:
-        self._send(self._build_ranked_html(ranked), len(ranked))
+    def render_ranked(self, ranked: list[RankedArticle], *, model: str = "") -> None:
+        self._send(self._build_ranked_html(ranked, model=model), len(ranked))
 
     def _send(self, html: str, count: int) -> None:
         if not self.smtp_host:
@@ -104,7 +104,7 @@ class EmailOutput:
         </div>"""
         return _wrap(f"{len(articles)} article(s)", section)
 
-    def _build_ranked_html(self, ranked: list[RankedArticle]) -> str:
+    def _build_ranked_html(self, ranked: list[RankedArticle], *, model: str = "") -> str:
         if not ranked:
             return _wrap("", "<p style='color:#64748b'>No new articles.</p>")
 
@@ -134,7 +134,10 @@ class EmailOutput:
             </div>""")
             total += len(tier_articles)
 
-        return _wrap(f"{total} article(s)", "".join(sections))
+        footer = f"{total} article(s)"
+        if model:
+            footer += f" &middot; ranked by {model}"
+        return _wrap(footer, "".join(sections))
 
     def _article_card(self, article: Article, *, border: str, bg: str) -> str:
         meta = self._meta(article.source, article.category, article.published)
