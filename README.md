@@ -5,7 +5,7 @@ Fetches articles from RSS feeds, deduplicates them, and outputs a ranked digest 
 ## Setup
 
 ```sh
-git clone <repo>
+git clone https://github.com/domparsons/digest.git
 cd digest
 uv sync
 news init
