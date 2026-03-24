@@ -1,0 +1,23 @@
+feeds:
+  - name: MacRumors
+    url: https://feeds.macrumors.com/MacRumors-All
+    type: rss
+    category: tech
+
+  - name: Hacker News
+    url: https://hnrss.org/frontpage
+    type: rss
+    category: tech
+
+output:
+  terminal: true
+  markdown:
+    enabled: false
+    directory: ~/newsdigest-output
+  email:
+    enabled: false
+    recipient: user@example.com
+    # SMTP creds come from env: NEWSDIGEST_SMTP_HOST, _PORT, _USER, _PASS
+
+database:
+  path: ~/.newsdigest/seen.db

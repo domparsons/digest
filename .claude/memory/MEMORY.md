@@ -1,0 +1,1 @@
+- [feedback_tooling.md](feedback_tooling.md) — Use uv, ruff, and ty for Python projects (not pip/black/flake8)
