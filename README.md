@@ -105,6 +105,17 @@ To run `news fetch` automatically, create a launchd plist at `~/Library/LaunchAg
     <string>-c</string>
     <string>~/.local/bin/news fetch</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NEWSDIGEST_SMTP_HOST</key>
+    <string>smtp.mail.me.com</string>
+    <key>NEWSDIGEST_SMTP_PORT</key>
+    <string>587</string>
+    <key>NEWSDIGEST_SMTP_USER</key>
+    <string>you@icloud.com</string>
+    <key>NEWSDIGEST_SMTP_PASS</key>
+    <string>your-app-specific-password</string>
+  </dict>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
