@@ -7,10 +7,11 @@ import click
 
 from newsdigest.config import Config, FeedConfig, default_config_path, load_config
 from newsdigest.feeds.rss import RSSFeedSource
-from newsdigest.models import Article
+from newsdigest.models import Article, RankedArticle
 from newsdigest.output.email import EmailOutput
 from newsdigest.output.markdown import MarkdownOutput
 from newsdigest.output.terminal import TerminalOutput
+from newsdigest.ranking import rank_articles
 from newsdigest.storage import ArticleStore
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,9 @@ logger = logging.getLogger(__name__)
     help="Path to config file (default: ~/.newsdigest/config.yaml)",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
 @click.pass_context
-def main(ctx: click.Context, config_path: str | None, verbose: bool) -> None:
+def main(ctx: click.Context, config_path: str | None, verbose: bool, no_rank: bool) -> None:
     """News Digest — fetch, deduplicate, and deliver news articles."""
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.WARNING,
@@ -35,14 +37,15 @@ def main(ctx: click.Context, config_path: str | None, verbose: bool) -> None:
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = Path(config_path) if config_path else default_config_path()
     if ctx.invoked_subcommand is None:
-        ctx.invoke(yesterday, blog=True, news=False)
+        ctx.invoke(yesterday, blog=True, news=False, no_rank=no_rank)
 
 
 @main.command()
 @click.option("--blog", is_flag=True, help="Only fetch blog feeds")
 @click.option("--news", is_flag=True, help="Only fetch news feeds")
+@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
 @click.pass_context
-def fetch(ctx: click.Context, blog: bool, news: bool) -> None:
+def fetch(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
     """Fetch all feeds, deduplicate, and output via configured channels."""
     config = _load_config(ctx)
     feeds = _filter_feeds(config.feeds, blog=blog, news=news)
@@ -52,7 +55,7 @@ def fetch(ctx: click.Context, blog: bool, news: bool) -> None:
         all_articles = _fetch_all_feeds(feeds)
         new_articles = store.filter_new(all_articles)
         store.mark_seen(new_articles)
-        _deliver(config, new_articles)
+        _deliver(config, new_articles, no_rank=no_rank)
     finally:
         store.close()
 
@@ -88,9 +91,7 @@ def history(ctx: click.Context, limit: int) -> None:
 
         terminal.console.print()
         for row in rows:
-            terminal.console.print(
-                f"  [bold]{row['title']}[/bold] — [dim]{row['source']}[/dim]"
-            )
+            terminal.console.print(f"  [bold]{row['title']}[/bold] — [dim]{row['source']}[/dim]")
             terminal.console.print(f"    [link={row['url']}]{row['url']}[/link]")
             terminal.console.print(f"    [dim]Seen: {row['first_seen']}[/dim]")
         terminal.console.print()
@@ -114,7 +115,6 @@ def init(ctx: click.Context) -> None:
         if example.exists():
             shutil.copy(example, config_path)
         else:
-            # Write a minimal default config inline
             config_path.write_text(
                 "feeds:\n"
                 "  - name: Hacker News\n"
@@ -133,6 +133,13 @@ def init(ctx: click.Context) -> None:
                 "\n"
                 "database:\n"
                 "  path: ~/.newsdigest/seen.db\n"
+                "\n"
+                "ranking:\n"
+                "  enabled: false\n"
+                "  provider: mlx\n"
+                "  model: mlx-community/Qwen3-4B-Instruct-2507-4bit\n"
+                "  profile: |\n"
+                "    General tech reader interested in software, AI, and Apple.\n"
             )
         click.echo(f"Created config: {config_path}")
 
@@ -143,37 +150,41 @@ def init(ctx: click.Context) -> None:
 @main.command()
 @click.option("--blog", is_flag=True, help="Only show blog feeds")
 @click.option("--news", is_flag=True, help="Only show news feeds")
+@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
 @click.pass_context
-def today(ctx: click.Context, blog: bool, news: bool) -> None:
+def today(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
     """Show articles from today."""
-    _show_since(ctx, days=0, label="today", blog=blog, news=news)
+    _show_since(ctx, days=0, label="today", blog=blog, news=news, no_rank=no_rank)
 
 
 @main.command()
 @click.option("--blog", is_flag=True, help="Only show blog feeds")
 @click.option("--news", is_flag=True, help="Only show news feeds")
+@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
 @click.pass_context
-def yesterday(ctx: click.Context, blog: bool, news: bool) -> None:
+def yesterday(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
     """Show articles from today and yesterday."""
-    _show_since(ctx, days=1, label="yesterday and today", blog=blog, news=news)
+    _show_since(ctx, days=1, label="yesterday and today", blog=blog, news=news, no_rank=no_rank)
 
 
 @main.command()
 @click.option("--blog", is_flag=True, help="Only show blog feeds")
 @click.option("--news", is_flag=True, help="Only show news feeds")
+@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
 @click.pass_context
-def week(ctx: click.Context, blog: bool, news: bool) -> None:
+def week(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
     """Show articles from the past 7 days."""
-    _show_since(ctx, days=7, label="the past week", blog=blog, news=news)
+    _show_since(ctx, days=7, label="the past week", blog=blog, news=news, no_rank=no_rank)
 
 
 @main.command()
 @click.option("--blog", is_flag=True, help="Only show blog feeds")
 @click.option("--news", is_flag=True, help="Only show news feeds")
+@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
 @click.pass_context
-def month(ctx: click.Context, blog: bool, news: bool) -> None:
+def month(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
     """Show articles from the past 30 days."""
-    _show_since(ctx, days=30, label="the past month", blog=blog, news=news)
+    _show_since(ctx, days=30, label="the past month", blog=blog, news=news, no_rank=no_rank)
 
 
 def _show_since(
@@ -183,6 +194,7 @@ def _show_since(
     label: str,
     blog: bool = False,
     news: bool = False,
+    no_rank: bool = False,
 ) -> None:
     config = _load_config(ctx)
     store = ArticleStore(config.db_path)
@@ -191,14 +203,12 @@ def _show_since(
         start_of_today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         since = start_of_today - timedelta(days=days)
 
-        # Get allowed source names based on group filter
         allowed_sources: set[str] | None = None
         if blog or news:
             feeds = _filter_feeds(config.feeds, blog=blog, news=news)
             allowed_sources = {f.name for f in feeds}
 
         rows = store.since(since)
-
         articles = [
             Article(
                 url=row["url"] or "",
@@ -212,7 +222,7 @@ def _show_since(
             if allowed_sources is None or row["source"] in allowed_sources
         ]
 
-        TerminalOutput().render(articles, title=f"Articles from {label}")
+        _deliver(config, articles, no_rank=no_rank, title=f"Articles from {label}")
     finally:
         store.close()
 
@@ -265,18 +275,41 @@ def _fetch_all_feeds(feeds: list[FeedConfig]) -> list[Article]:
     return all_articles
 
 
-def _deliver(config: Config, articles: list[Article]) -> None:
+def _deliver(
+    config: Config,
+    articles: list[Article],
+    *,
+    no_rank: bool = False,
+    title: str = "News Digest",
+) -> None:
+    ranked: list[RankedArticle] | None = None
+    warnings: list[str] = []
+
+    if not no_rank and config.ranking.enabled:
+        ranked, warnings = rank_articles(articles, config.ranking)
+        if ranked is None and warnings:
+            for w in warnings:
+                click.echo(f"Warning: {w}")
+
+    terminal = TerminalOutput()
     if config.output.terminal:
-        TerminalOutput().render(articles)
+        if ranked is not None:
+            terminal.render_ranked(ranked, title=title, warnings=warnings or None)
+        else:
+            terminal.render(articles, title=title)
 
     if config.output.markdown.enabled:
         md = MarkdownOutput(config.output.markdown.directory)
-        filepath = md.render(articles)
+        filepath = md.render_ranked(ranked) if ranked is not None else md.render(articles)
         click.echo(f"Markdown digest written to: {filepath}")
 
     if config.output.email.enabled:
         try:
-            EmailOutput(config.output.email.recipient).render(articles)
+            email = EmailOutput(config.output.email.recipient)
+            if ranked is not None:
+                email.render_ranked(ranked)
+            else:
+                email.render(articles)
         except Exception as e:
             logger.error("Failed to send email: %s", e)
             click.echo(f"Warning: Failed to send email: {e}")

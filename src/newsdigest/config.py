@@ -38,10 +38,19 @@ class DatabaseConfig:
 
 
 @dataclass(frozen=True)
+class RankingConfig:
+    enabled: bool = False
+    provider: str = "mlx"
+    model: str = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+    profile: str = ""
+
+
+@dataclass(frozen=True)
 class Config:
     feeds: list[FeedConfig]
     output: OutputConfig = field(default_factory=OutputConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
+    ranking: RankingConfig = field(default_factory=RankingConfig)
 
     @property
     def db_path(self) -> Path:
@@ -83,7 +92,15 @@ def load_config(path: Path) -> Config:
     db_raw = raw.get("database", {})
     database = DatabaseConfig(**db_raw)
 
-    return Config(feeds=feeds, output=output, database=database)
+    ranking_raw = raw.get("ranking", {})
+    ranking = RankingConfig(
+        enabled=ranking_raw.get("enabled", False),
+        provider=ranking_raw.get("provider", "mlx"),
+        model=ranking_raw.get("model", "mlx-community/Qwen3-4B-Instruct-2507-4bit"),
+        profile=ranking_raw.get("profile", ""),
+    )
+
+    return Config(feeds=feeds, output=output, database=database, ranking=ranking)
 
 
 def default_config_path() -> Path:
