@@ -1,5 +1,6 @@
 import logging
 import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import click
@@ -15,7 +16,7 @@ from newsdigest.storage import ArticleStore
 logger = logging.getLogger(__name__)
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.option(
     "--config",
     "config_path",
@@ -33,17 +34,22 @@ def main(ctx: click.Context, config_path: str | None, verbose: bool) -> None:
     )
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = Path(config_path) if config_path else default_config_path()
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(yesterday, blog=True, news=False)
 
 
 @main.command()
+@click.option("--blog", is_flag=True, help="Only fetch blog feeds")
+@click.option("--news", is_flag=True, help="Only fetch news feeds")
 @click.pass_context
-def fetch(ctx: click.Context) -> None:
+def fetch(ctx: click.Context, blog: bool, news: bool) -> None:
     """Fetch all feeds, deduplicate, and output via configured channels."""
     config = _load_config(ctx)
+    feeds = _filter_feeds(config.feeds, blog=blog, news=news)
     store = ArticleStore(config.db_path)
 
     try:
-        all_articles = _fetch_all_feeds(config.feeds)
+        all_articles = _fetch_all_feeds(feeds)
         new_articles = store.filter_new(all_articles)
         store.mark_seen(new_articles)
         _deliver(config, new_articles)
@@ -131,7 +137,98 @@ def init(ctx: click.Context) -> None:
         click.echo(f"Created config: {config_path}")
 
     click.echo(f"Database directory: {config_dir}")
-    click.echo("Edit your config, then run: newsdigest fetch")
+    click.echo("Edit your config, then run: news fetch")
+
+
+@main.command()
+@click.option("--blog", is_flag=True, help="Only show blog feeds")
+@click.option("--news", is_flag=True, help="Only show news feeds")
+@click.pass_context
+def today(ctx: click.Context, blog: bool, news: bool) -> None:
+    """Show articles from today."""
+    _show_since(ctx, days=0, label="today", blog=blog, news=news)
+
+
+@main.command()
+@click.option("--blog", is_flag=True, help="Only show blog feeds")
+@click.option("--news", is_flag=True, help="Only show news feeds")
+@click.pass_context
+def yesterday(ctx: click.Context, blog: bool, news: bool) -> None:
+    """Show articles from today and yesterday."""
+    _show_since(ctx, days=1, label="yesterday and today", blog=blog, news=news)
+
+
+@main.command()
+@click.option("--blog", is_flag=True, help="Only show blog feeds")
+@click.option("--news", is_flag=True, help="Only show news feeds")
+@click.pass_context
+def week(ctx: click.Context, blog: bool, news: bool) -> None:
+    """Show articles from the past 7 days."""
+    _show_since(ctx, days=7, label="the past week", blog=blog, news=news)
+
+
+@main.command()
+@click.option("--blog", is_flag=True, help="Only show blog feeds")
+@click.option("--news", is_flag=True, help="Only show news feeds")
+@click.pass_context
+def month(ctx: click.Context, blog: bool, news: bool) -> None:
+    """Show articles from the past 30 days."""
+    _show_since(ctx, days=30, label="the past month", blog=blog, news=news)
+
+
+def _show_since(
+    ctx: click.Context,
+    *,
+    days: int,
+    label: str,
+    blog: bool = False,
+    news: bool = False,
+) -> None:
+    config = _load_config(ctx)
+    store = ArticleStore(config.db_path)
+
+    try:
+        start_of_today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        since = start_of_today - timedelta(days=days)
+
+        # Get allowed source names based on group filter
+        allowed_sources: set[str] | None = None
+        if blog or news:
+            feeds = _filter_feeds(config.feeds, blog=blog, news=news)
+            allowed_sources = {f.name for f in feeds}
+
+        rows = store.since(since)
+
+        articles = [
+            Article(
+                url=row["url"] or "",
+                title=row["title"] or "",
+                source=row["source"] or "",
+                category=row["category"] or "",
+                published=datetime.fromisoformat(row["published"]) if row["published"] else None,
+                summary=None,
+            )
+            for row in rows
+            if allowed_sources is None or row["source"] in allowed_sources
+        ]
+
+        TerminalOutput().render(articles, title=f"Articles from {label}")
+    finally:
+        store.close()
+
+
+def _filter_feeds(
+    feeds: list[FeedConfig], *, blog: bool = False, news: bool = False
+) -> list[FeedConfig]:
+    """Filter feeds by group. If neither flag is set, return all feeds."""
+    if not blog and not news:
+        return feeds
+    allowed: set[str] = set()
+    if blog:
+        allowed.add("blog")
+    if news:
+        allowed.add("news")
+    return [f for f in feeds if f.group in allowed]
 
 
 def _load_config(ctx: click.Context) -> Config:

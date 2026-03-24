@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-newsdigest = "newsdigest.cli:main"
+news = "newsdigest.cli:main"
 
 [build-system]
 requires = ["hatchling"]

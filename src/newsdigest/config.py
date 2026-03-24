@@ -10,6 +10,7 @@ class FeedConfig:
     url: str
     type: str
     category: str = ""
+    group: str = ""
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ def load_config(path: Path) -> Config:
             url=f["url"],
             type=f.get("type", "rss"),
             category=f.get("category", ""),
+            group=f.get("group", ""),
         )
         for f in raw["feeds"]
     ]

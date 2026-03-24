@@ -80,5 +80,29 @@ class ArticleStore:
             for row in cursor.fetchall()
         ]
 
+    def since(self, since: datetime) -> list[dict[str, str | None]]:
+        """Return articles published on or after the given datetime.
+
+        Only includes articles with a known published date — articles without
+        one are excluded since we can't reliably place them in time.
+        """
+        cursor = self._conn.execute(
+            "SELECT url, title, source, category, published, first_seen "
+            "FROM seen_articles WHERE published IS NOT NULL AND published >= ? "
+            "ORDER BY published DESC",
+            (since.isoformat(),),
+        )
+        return [
+            {
+                "url": row[0],
+                "title": row[1],
+                "source": row[2],
+                "category": row[3],
+                "published": row[4],
+                "first_seen": row[5],
+            }
+            for row in cursor.fetchall()
+        ]
+
     def close(self) -> None:
         self._conn.close()
