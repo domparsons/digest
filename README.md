@@ -103,7 +103,7 @@ To run `news fetch` automatically, create a launchd plist at `~/Library/LaunchAg
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>~/.local/bin/news fetch</string>
+    <string>~/.local/bin/news fetch --blog</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
