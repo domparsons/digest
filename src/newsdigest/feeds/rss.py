@@ -33,7 +33,7 @@ class RSSFeedSource(FeedSource):
             if not url:
                 continue
 
-            published = _parse_published(entry)
+            published = _parse_published(entry) or datetime.now()
             summary = _extract_summary(entry)
 
             articles.append(

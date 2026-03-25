@@ -37,7 +37,7 @@ def test_article_without_date():
     articles = source.fetch()
 
     third = articles[2]
-    assert third.published is None
+    assert third.published is not None  # falls back to fetch time when feed has no date
 
 
 def test_bad_feed_returns_empty():
