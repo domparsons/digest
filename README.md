@@ -63,8 +63,8 @@ ranking:
 ## Usage
 
 ```sh
-news                        # default: yesterday --blog (with ranking if configured)
-news --no-rank              # same, skip ranking
+news                        # default: yesterday --blog
+news --ai                   # same, with LLM ranking
 
 news fetch                  # fetch all feeds, mark new articles as seen
 news fetch --blog           # blog feeds only
@@ -77,7 +77,7 @@ news month                  # past 30 days
 
 news today --blog           # filter by feed group
 news today --group ai       # filter by any custom group name
-news today --no-rank        # skip ranking for this run
+news today --ai             # rank articles with LLM
 news today --email          # send email in addition to terminal output
 
 news history                # last 20 seen articles
@@ -109,7 +109,7 @@ To run `news fetch` automatically, create a launchd plist at `~/Library/LaunchAg
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>~/.local/bin/news yesterday --blog --email</string>
+    <string>~/.local/bin/news yesterday --blog --ai --email</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>

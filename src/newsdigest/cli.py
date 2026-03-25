@@ -22,7 +22,7 @@ _GROUP_OPTIONS = [
     click.option("--group", "group", default=None, help="Filter to feeds with this group name"),
 ]
 _COMMON_OPTIONS = _GROUP_OPTIONS + [
-    click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured"),
+    click.option("--ai", is_flag=True, help="Rank articles using LLM"),
     click.option("--email", "send_email", is_flag=True, help="Send digest via email"),
 ]
 
@@ -44,14 +44,14 @@ def _add_options(options):
     help="Path to config file (default: ~/.newsdigest/config.yaml)",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
+@click.option("--ai", is_flag=True, help="Rank articles using LLM")
 @click.option("--email", "send_email", is_flag=True, help="Send digest via email")
 @click.pass_context
 def main(
     ctx: click.Context,
     config_path: str | None,
     verbose: bool,
-    no_rank: bool,
+    ai: bool,
     send_email: bool,
 ) -> None:
     """News Digest — fetch, deduplicate, and deliver news articles."""
@@ -63,7 +63,7 @@ def main(
     ctx.obj["config_path"] = Path(config_path) if config_path else default_config_path()
     if ctx.invoked_subcommand is None:
         ctx.invoke(
-            yesterday, blog=True, news=False, group=None, no_rank=no_rank, send_email=send_email
+            yesterday, blog=True, news=False, group=None, ai=ai, send_email=send_email
         )
 
 
@@ -75,7 +75,7 @@ def fetch(
     blog: bool,
     news: bool,
     group: str | None,
-    no_rank: bool,
+    ai: bool,
     send_email: bool,
 ) -> None:
     """Fetch all feeds, deduplicate, and output via configured channels."""
@@ -87,7 +87,7 @@ def fetch(
         all_articles = _fetch_all_feeds(feeds)
         new_articles = store.filter_new(all_articles)
         store.mark_seen(new_articles)
-        _deliver(config, new_articles, no_rank=no_rank, send_email=send_email)
+        _deliver(config, new_articles, ai=ai, send_email=send_email)
     finally:
         store.close()
 
@@ -183,12 +183,12 @@ def init(ctx: click.Context) -> None:
 @_add_options(_COMMON_OPTIONS)
 @click.pass_context
 def today(
-    ctx: click.Context, blog: bool, news: bool, group: str | None, no_rank: bool, send_email: bool
+    ctx: click.Context, blog: bool, news: bool, group: str | None, ai: bool, send_email: bool
 ) -> None:
     """Show articles from today."""
     _show_since(
         ctx, days=0, label="today", blog=blog, news=news, group=group,
-        no_rank=no_rank, send_email=send_email,
+        ai=ai, send_email=send_email,
     )
 
 
@@ -196,12 +196,12 @@ def today(
 @_add_options(_COMMON_OPTIONS)
 @click.pass_context
 def yesterday(
-    ctx: click.Context, blog: bool, news: bool, group: str | None, no_rank: bool, send_email: bool
+    ctx: click.Context, blog: bool, news: bool, group: str | None, ai: bool, send_email: bool
 ) -> None:
     """Show articles from today and yesterday."""
     _show_since(
         ctx, days=1, label="yesterday and today", blog=blog, news=news, group=group,
-        no_rank=no_rank, send_email=send_email,
+        ai=ai, send_email=send_email,
     )
 
 
@@ -209,12 +209,12 @@ def yesterday(
 @_add_options(_COMMON_OPTIONS)
 @click.pass_context
 def week(
-    ctx: click.Context, blog: bool, news: bool, group: str | None, no_rank: bool, send_email: bool
+    ctx: click.Context, blog: bool, news: bool, group: str | None, ai: bool, send_email: bool
 ) -> None:
     """Show articles from the past 7 days."""
     _show_since(
         ctx, days=7, label="the past week", blog=blog, news=news, group=group,
-        no_rank=no_rank, send_email=send_email,
+        ai=ai, send_email=send_email,
     )
 
 
@@ -222,12 +222,12 @@ def week(
 @_add_options(_COMMON_OPTIONS)
 @click.pass_context
 def month(
-    ctx: click.Context, blog: bool, news: bool, group: str | None, no_rank: bool, send_email: bool
+    ctx: click.Context, blog: bool, news: bool, group: str | None, ai: bool, send_email: bool
 ) -> None:
     """Show articles from the past 30 days."""
     _show_since(
         ctx, days=30, label="the past month", blog=blog, news=news, group=group,
-        no_rank=no_rank, send_email=send_email,
+        ai=ai, send_email=send_email,
     )
 
 
@@ -239,7 +239,7 @@ def _show_since(
     blog: bool = False,
     news: bool = False,
     group: str | None = None,
-    no_rank: bool = False,
+    ai: bool = False,
     send_email: bool = False,
 ) -> None:
     config = _load_config(ctx)
@@ -269,7 +269,7 @@ def _show_since(
         ]
 
         _deliver(
-            config, articles, no_rank=no_rank, send_email=send_email, title=f"Articles from {label}"
+            config, articles, ai=ai, send_email=send_email, title=f"Articles from {label}"
         )
     finally:
         store.close()
@@ -333,14 +333,14 @@ def _deliver(
     config: Config,
     articles: list[Article],
     *,
-    no_rank: bool = False,
+    ai: bool = False,
     send_email: bool = False,
     title: str = "News Digest",
 ) -> None:
     ranked: list[RankedArticle] | None = None
     warnings: list[str] = []
 
-    if not no_rank and config.ranking.enabled:
+    if ai:
         ranked, warnings = rank_articles(articles, config.ranking)
         if ranked is None and warnings:
             for w in warnings:
