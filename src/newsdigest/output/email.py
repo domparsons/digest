@@ -92,17 +92,28 @@ class EmailOutput:
         if not articles:
             return _wrap("", "<p style='color:#64748b'>No new articles.</p>")
 
-        cards = "".join(self._article_card(a, border="#e2e8f0", bg="#ffffff") for a in articles)
-        section = f"""
+        by_source: dict[str, list[Article]] = {}
+        for a in articles:
+            by_source.setdefault(a.source, []).append(a)
+
+        sections: list[str] = []
+        for source, source_articles in by_source.items():
+            sorted_articles = sorted(
+                source_articles, key=lambda a: a.published or datetime.min, reverse=True
+            )
+            cards = "".join(
+                self._article_card(a, border="#e2e8f0", bg="#ffffff") for a in sorted_articles
+            )
+            sections.append(f"""
         <div class='section'>
           <div style='background:#1e293b;border-radius:6px 6px 0 0'>
-            <div class='section-header' style='color:#fff'>All Articles</div>
+            <div class='section-header' style='color:#fff'>{source}</div>
           </div>
           <div style='border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px'>
             {cards}
           </div>
-        </div>"""
-        return _wrap(f"{len(articles)} article(s)", section)
+        </div>""")
+        return _wrap(f"{len(articles)} article(s)", "".join(sections))
 
     def _build_ranked_html(self, ranked: list[RankedArticle], *, model: str = "") -> str:
         if not ranked:
