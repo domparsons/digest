@@ -243,16 +243,18 @@ def _show_since(
     send_email: bool = False,
 ) -> None:
     config = _load_config(ctx)
+    feeds = _filter_feeds(config.feeds, blog=blog, news=news, group=group)
     store = ArticleStore(config.db_path)
 
     try:
+        all_articles = _fetch_all_feeds(feeds)
+        new_articles = store.filter_new(all_articles)
+        store.mark_seen(new_articles)
+
         start_of_today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         since = start_of_today - timedelta(days=days)
 
-        allowed_sources: set[str] | None = None
-        if blog or news or group:
-            feeds = _filter_feeds(config.feeds, blog=blog, news=news, group=group)
-            allowed_sources = {f.name for f in feeds}
+        allowed_sources = {f.name for f in feeds} if (blog or news or group) else None
 
         rows = store.since(since)
         articles = [
