@@ -16,6 +16,24 @@ from newsdigest.storage import ArticleStore
 
 logger = logging.getLogger(__name__)
 
+_GROUP_OPTIONS = [
+    click.option("--blog", is_flag=True, help="Filter to feeds with group=blog"),
+    click.option("--news", is_flag=True, help="Filter to feeds with group=news"),
+    click.option("--group", "group", default=None, help="Filter to feeds with this group name"),
+]
+_COMMON_OPTIONS = _GROUP_OPTIONS + [
+    click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured"),
+    click.option("--email", "send_email", is_flag=True, help="Send digest via email"),
+]
+
+
+def _add_options(options):
+    def decorator(f):
+        for opt in reversed(options):
+            f = opt(f)
+        return f
+    return decorator
+
 
 @click.group(invoke_without_command=True)
 @click.option(
@@ -27,8 +45,15 @@ logger = logging.getLogger(__name__)
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
+@click.option("--email", "send_email", is_flag=True, help="Send digest via email")
 @click.pass_context
-def main(ctx: click.Context, config_path: str | None, verbose: bool, no_rank: bool) -> None:
+def main(
+    ctx: click.Context,
+    config_path: str | None,
+    verbose: bool,
+    no_rank: bool,
+    send_email: bool,
+) -> None:
     """News Digest — fetch, deduplicate, and deliver news articles."""
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.WARNING,
@@ -37,25 +62,32 @@ def main(ctx: click.Context, config_path: str | None, verbose: bool, no_rank: bo
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = Path(config_path) if config_path else default_config_path()
     if ctx.invoked_subcommand is None:
-        ctx.invoke(yesterday, blog=True, news=False, no_rank=no_rank)
+        ctx.invoke(
+            yesterday, blog=True, news=False, group=None, no_rank=no_rank, send_email=send_email
+        )
 
 
 @main.command()
-@click.option("--blog", is_flag=True, help="Only fetch blog feeds")
-@click.option("--news", is_flag=True, help="Only fetch news feeds")
-@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
+@_add_options(_COMMON_OPTIONS)
 @click.pass_context
-def fetch(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
+def fetch(
+    ctx: click.Context,
+    blog: bool,
+    news: bool,
+    group: str | None,
+    no_rank: bool,
+    send_email: bool,
+) -> None:
     """Fetch all feeds, deduplicate, and output via configured channels."""
     config = _load_config(ctx)
-    feeds = _filter_feeds(config.feeds, blog=blog, news=news)
+    feeds = _filter_feeds(config.feeds, blog=blog, news=news, group=group)
     store = ArticleStore(config.db_path)
 
     try:
         all_articles = _fetch_all_feeds(feeds)
         new_articles = store.filter_new(all_articles)
         store.mark_seen(new_articles)
-        _deliver(config, new_articles, no_rank=no_rank)
+        _deliver(config, new_articles, no_rank=no_rank, send_email=send_email)
     finally:
         store.close()
 
@@ -68,8 +100,8 @@ def list_feeds(ctx: click.Context) -> None:
     terminal = TerminalOutput()
     terminal.console.print()
     for feed in config.feeds:
-        cat = f" [{feed.category}]" if feed.category else ""
-        terminal.console.print(f"  [bold]{feed.name}[/bold]{cat} ({feed.type})")
+        group = f" [{feed.group}]" if feed.group else ""
+        terminal.console.print(f"  [bold]{feed.name}[/bold]{group} ({feed.type})")
         terminal.console.print(f"    [dim]{feed.url}[/dim]")
     terminal.console.print()
 
@@ -121,6 +153,7 @@ def init(ctx: click.Context) -> None:
                 "    url: https://hnrss.org/frontpage\n"
                 "    type: rss\n"
                 "    category: tech\n"
+                "    group: news\n"
                 "\n"
                 "output:\n"
                 "  terminal: true\n"
@@ -128,7 +161,6 @@ def init(ctx: click.Context) -> None:
                 "    enabled: false\n"
                 "    directory: ~/newsdigest-output\n"
                 "  email:\n"
-                "    enabled: false\n"
                 "    recipient: user@example.com\n"
                 "\n"
                 "database:\n"
@@ -148,43 +180,55 @@ def init(ctx: click.Context) -> None:
 
 
 @main.command()
-@click.option("--blog", is_flag=True, help="Only show blog feeds")
-@click.option("--news", is_flag=True, help="Only show news feeds")
-@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
+@_add_options(_COMMON_OPTIONS)
 @click.pass_context
-def today(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
+def today(
+    ctx: click.Context, blog: bool, news: bool, group: str | None, no_rank: bool, send_email: bool
+) -> None:
     """Show articles from today."""
-    _show_since(ctx, days=0, label="today", blog=blog, news=news, no_rank=no_rank)
+    _show_since(
+        ctx, days=0, label="today", blog=blog, news=news, group=group,
+        no_rank=no_rank, send_email=send_email,
+    )
 
 
 @main.command()
-@click.option("--blog", is_flag=True, help="Only show blog feeds")
-@click.option("--news", is_flag=True, help="Only show news feeds")
-@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
+@_add_options(_COMMON_OPTIONS)
 @click.pass_context
-def yesterday(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
+def yesterday(
+    ctx: click.Context, blog: bool, news: bool, group: str | None, no_rank: bool, send_email: bool
+) -> None:
     """Show articles from today and yesterday."""
-    _show_since(ctx, days=1, label="yesterday and today", blog=blog, news=news, no_rank=no_rank)
+    _show_since(
+        ctx, days=1, label="yesterday and today", blog=blog, news=news, group=group,
+        no_rank=no_rank, send_email=send_email,
+    )
 
 
 @main.command()
-@click.option("--blog", is_flag=True, help="Only show blog feeds")
-@click.option("--news", is_flag=True, help="Only show news feeds")
-@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
+@_add_options(_COMMON_OPTIONS)
 @click.pass_context
-def week(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
+def week(
+    ctx: click.Context, blog: bool, news: bool, group: str | None, no_rank: bool, send_email: bool
+) -> None:
     """Show articles from the past 7 days."""
-    _show_since(ctx, days=7, label="the past week", blog=blog, news=news, no_rank=no_rank)
+    _show_since(
+        ctx, days=7, label="the past week", blog=blog, news=news, group=group,
+        no_rank=no_rank, send_email=send_email,
+    )
 
 
 @main.command()
-@click.option("--blog", is_flag=True, help="Only show blog feeds")
-@click.option("--news", is_flag=True, help="Only show news feeds")
-@click.option("--no-rank", is_flag=True, help="Skip LLM ranking even if configured")
+@_add_options(_COMMON_OPTIONS)
 @click.pass_context
-def month(ctx: click.Context, blog: bool, news: bool, no_rank: bool) -> None:
+def month(
+    ctx: click.Context, blog: bool, news: bool, group: str | None, no_rank: bool, send_email: bool
+) -> None:
     """Show articles from the past 30 days."""
-    _show_since(ctx, days=30, label="the past month", blog=blog, news=news, no_rank=no_rank)
+    _show_since(
+        ctx, days=30, label="the past month", blog=blog, news=news, group=group,
+        no_rank=no_rank, send_email=send_email,
+    )
 
 
 def _show_since(
@@ -194,7 +238,9 @@ def _show_since(
     label: str,
     blog: bool = False,
     news: bool = False,
+    group: str | None = None,
     no_rank: bool = False,
+    send_email: bool = False,
 ) -> None:
     config = _load_config(ctx)
     store = ArticleStore(config.db_path)
@@ -204,8 +250,8 @@ def _show_since(
         since = start_of_today - timedelta(days=days)
 
         allowed_sources: set[str] | None = None
-        if blog or news:
-            feeds = _filter_feeds(config.feeds, blog=blog, news=news)
+        if blog or news or group:
+            feeds = _filter_feeds(config.feeds, blog=blog, news=news, group=group)
             allowed_sources = {f.name for f in feeds}
 
         rows = store.since(since)
@@ -222,22 +268,30 @@ def _show_since(
             if allowed_sources is None or row["source"] in allowed_sources
         ]
 
-        _deliver(config, articles, no_rank=no_rank, title=f"Articles from {label}")
+        _deliver(
+            config, articles, no_rank=no_rank, send_email=send_email, title=f"Articles from {label}"
+        )
     finally:
         store.close()
 
 
 def _filter_feeds(
-    feeds: list[FeedConfig], *, blog: bool = False, news: bool = False
+    feeds: list[FeedConfig],
+    *,
+    blog: bool = False,
+    news: bool = False,
+    group: str | None = None,
 ) -> list[FeedConfig]:
-    """Filter feeds by group. If neither flag is set, return all feeds."""
-    if not blog and not news:
-        return feeds
+    """Filter feeds by group. Returns all feeds if no filter is specified."""
     allowed: set[str] = set()
     if blog:
         allowed.add("blog")
     if news:
         allowed.add("news")
+    if group:
+        allowed.add(group)
+    if not allowed:
+        return feeds
     return [f for f in feeds if f.group in allowed]
 
 
@@ -280,6 +334,7 @@ def _deliver(
     articles: list[Article],
     *,
     no_rank: bool = False,
+    send_email: bool = False,
     title: str = "News Digest",
 ) -> None:
     ranked: list[RankedArticle] | None = None
@@ -303,7 +358,7 @@ def _deliver(
         filepath = md.render_ranked(ranked) if ranked is not None else md.render(articles)
         click.echo(f"Markdown digest written to: {filepath}")
 
-    if config.output.email.enabled:
+    if send_email or config.output.email.enabled:
         try:
             email = EmailOutput(config.output.email.recipient)
             if ranked is not None:

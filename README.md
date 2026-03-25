@@ -76,12 +76,18 @@ news week                   # past 7 days
 news month                  # past 30 days
 
 news today --blog           # filter by feed group
+news today --group ai       # filter by any custom group name
 news today --no-rank        # skip ranking for this run
+news today --email          # send email in addition to terminal output
 
 news history                # last 20 seen articles
 news history -n 50          # last 50
 news list-feeds             # show configured feeds
 ```
+
+Email is not sent by default. Add `--email` to any command to send, or set `output.email.enabled: true` in your config to always send.
+
+Feed groups can be any string — not just `blog` or `news`. Add a `group:` field to any feed in your config and filter with `--group <name>` (or use the `--blog`/`--news` shorthands for those specific values).
 
 All time-range commands (`today`, `yesterday`, `week`, `month`) read from the local database by published date — they don't hit the network. Use `news fetch` to pull new articles first.
 
@@ -103,7 +109,7 @@ To run `news fetch` automatically, create a launchd plist at `~/Library/LaunchAg
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>~/.local/bin/news fetch --blog</string>
+    <string>~/.local/bin/news yesterday --blog --email</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
